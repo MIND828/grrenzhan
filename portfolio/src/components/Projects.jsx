@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { projects } from "../data/content";
 import ProfileCard from "./ProfileCard";
 import { useMaskTitle, useStaggerChildren, useClipReveal } from "../hooks/useMotion";
+import PdfViewer from "./PdfViewer";
 
 export default function Projects() {
   const [activePdf, setActivePdf] = useState(null);
@@ -10,6 +11,10 @@ export default function Projects() {
 
   const titleRef = useRef(null);
   const trackRef = useRef(null);
+  const viewportRef = useRef(null);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const swipeRef = useRef({ active: false, locked: null, startX: 0, startY: 0, lastDx: 0, currentAtStart: 0 });
   useMaskTitle(titleRef);
   useStaggerChildren(trackRef, { y: 40, stagger: 0.1, start: "top 80%" });
   useClipReveal(trackRef, { selector: ".profile-card__tile", start: "top 88%", duration: 1.0 });
@@ -36,6 +41,59 @@ export default function Projects() {
 
   const go = (delta) =>
     setCurrent((c) => Math.max(0, Math.min(maxIndex, c + delta)));
+
+  // 触摸/鼠标左右滑动切换卡片（方向锁：竖向滚动不拦截）
+  const onSwipeStart = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const s = swipeRef.current;
+    s.active = true;
+    s.locked = null;
+    s.startX = e.clientX;
+    s.startY = e.clientY;
+    s.lastDx = 0;
+    s.currentAtStart = current;
+    setDragX(0);
+    setDragging(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const onSwipeMove = (e) => {
+    const s = swipeRef.current;
+    if (!s.active) return;
+    const dx = e.clientX - s.startX;
+    const dy = e.clientY - s.startY;
+    if (!s.locked) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      s.locked = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (s.locked === "y") {
+        s.active = false;
+        setDragging(false);
+        return;
+      }
+    }
+    if (s.locked === "x") {
+      if (e.cancelable) e.preventDefault();
+      let applied = dx;
+      // 到达两端时加阻尼
+      if ((s.currentAtStart === 0 && dx > 0) || (s.currentAtStart >= maxIndex && dx < 0)) {
+        applied = dx * 0.35;
+      }
+      s.lastDx = applied;
+      setDragX(applied);
+    }
+  };
+  const onSwipeEnd = () => {
+    const s = swipeRef.current;
+    if (!s.active) return;
+    s.active = false;
+    setDragging(false);
+    if (s.locked === "x" && viewportRef.current) {
+      const cardW = viewportRef.current.clientWidth / visible;
+      const threshold = Math.min(80, cardW * 0.22);
+      if (Math.abs(s.lastDx) > threshold) go(s.lastDx < 0 ? 1 : -1);
+    }
+    setDragX(0);
+    s.locked = null;
+  };
 
   // 弹窗打开时锁定背景滚动，并支持 ESC 关闭
   useEffect(() => {
@@ -107,12 +165,19 @@ export default function Projects() {
 
         {/* 项目卡片 - 轮播展示，每行 4 张（响应式降级 2 / 1） */}
         <div className="relative">
-          <div className="overflow-hidden">
+          <div
+            ref={viewportRef}
+            className="overflow-hidden touch-pan-y select-none"
+            onPointerDown={onSwipeStart}
+            onPointerMove={onSwipeMove}
+            onPointerUp={onSwipeEnd}
+            onPointerCancel={onSwipeEnd}
+          >
             <div
               ref={trackRef}
               data-stagger
-              className="flex transition-transform duration-500 ease-out"
-              style={{ transform: `translateX(-${current * (100 / visible)}%)` }}
+              className={`flex ${dragging ? "" : "transition-transform duration-500 ease-out"}`}
+              style={{ transform: `translateX(calc(-${current * (100 / visible)}% + ${dragX}px))` }}
             >
               {projects.map((p, idx) => (
                 <div
@@ -311,11 +376,7 @@ export default function Projects() {
               </div>
             </div>
             {activePdf.url ? (
-              <iframe
-                src={activePdf.url}
-                title={`${activePdf.name} - PDF 预览`}
-                className="flex-1 w-full bg-white"
-              />
+              <PdfViewer url={activePdf.url} />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center px-6">
                 <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-text-dim">
