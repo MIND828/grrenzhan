@@ -36,7 +36,10 @@ export default function PdfViewer({ url }) {
         const pdfjs = await import(/* @vite-ignore */ `${base}vendor/pdfjs/pdf.min.mjs`);
         pdfjs.GlobalWorkerOptions.workerSrc = `${base}vendor/pdfjs/pdf.worker.min.mjs`;
 
-        const task = pdfjs.getDocument({ url });
+        // wasmUrl 指向部署了 openjpeg.wasm 等解码器的目录——PDF 里的 JPEG2000
+        // （/JPXDecode）图片需要 OpenJPEG WASM 解码，不传此项 worker 拿不到解码
+        // 器，图片会被静默跳过（页面上只剩底色空块）。
+        const task = pdfjs.getDocument({ url, wasmUrl: `${base}vendor/pdfjs/` });
         doc = await task.promise;
         if (cancelled) {
           // dev StrictMode 下 effect 会双调用，PDF.js 可能对相同 URL 复用 doc，
