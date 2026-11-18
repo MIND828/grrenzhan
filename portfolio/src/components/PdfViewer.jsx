@@ -39,7 +39,11 @@ export default function PdfViewer({ url }) {
         const task = pdfjs.getDocument({ url });
         doc = await task.promise;
         if (cancelled) {
-          doc.destroy();
+          // dev StrictMode 下 effect 会双调用，PDF.js 可能对相同 URL 复用 doc，
+          // 导致 destroy 被重复调用；加判断避免 "destroy is not a function"
+          if (typeof doc.destroy === "function") {
+            try { doc.destroy(); } catch {}
+          }
           return;
         }
         pdfRef.current = doc;
@@ -71,7 +75,9 @@ export default function PdfViewer({ url }) {
         } catch {}
       });
       jobsRef.current.clear();
-      if (doc) doc.destroy();
+      if (doc && typeof doc.destroy === "function") {
+        try { doc.destroy(); } catch {}
+      }
       pdfRef.current = null;
     };
   }, [url]);

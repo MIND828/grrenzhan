@@ -43,6 +43,9 @@ export default function Projects() {
     setCurrent((c) => Math.max(0, Math.min(maxIndex, c + delta)));
 
   // 触摸/鼠标左右滑动切换卡片（方向锁：竖向滚动不拦截）
+  // 注意：不能在 pointerdown 时就 setPointerCapture —— 那会让 pointerup 的 target
+  // 变成 viewport，浏览器判定 pointerdown/up 不在同一元素，从而吞掉后代按钮的
+  // click 事件（点击"查看详情"无反应）。只在确认横向拖动后才 capture。
   const onSwipeStart = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const s = swipeRef.current;
@@ -52,9 +55,6 @@ export default function Projects() {
     s.startY = e.clientY;
     s.lastDx = 0;
     s.currentAtStart = current;
-    setDragX(0);
-    setDragging(true);
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
   const onSwipeMove = (e) => {
     const s = swipeRef.current;
@@ -64,9 +64,13 @@ export default function Projects() {
     if (!s.locked) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       s.locked = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
-      if (s.locked === "y") {
+      if (s.locked === "x") {
+        // 确认横向拖动后才 capture + 进入拖拽态（移除过渡动画实现跟手）
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+        setDragging(true);
+      } else {
+        // 纵向占优：放行，让页面正常滚动
         s.active = false;
-        setDragging(false);
         return;
       }
     }
@@ -81,17 +85,20 @@ export default function Projects() {
       setDragX(applied);
     }
   };
-  const onSwipeEnd = () => {
+  const onSwipeEnd = (e) => {
     const s = swipeRef.current;
     if (!s.active) return;
     s.active = false;
-    setDragging(false);
-    if (s.locked === "x" && viewportRef.current) {
-      const cardW = viewportRef.current.clientWidth / visible;
-      const threshold = Math.min(80, cardW * 0.22);
-      if (Math.abs(s.lastDx) > threshold) go(s.lastDx < 0 ? 1 : -1);
+    if (s.locked === "x") {
+      setDragging(false);
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+      if (viewportRef.current) {
+        const cardW = viewportRef.current.clientWidth / visible;
+        const threshold = Math.min(80, cardW * 0.22);
+        if (Math.abs(s.lastDx) > threshold) go(s.lastDx < 0 ? 1 : -1);
+      }
+      setDragX(0);
     }
-    setDragX(0);
     s.locked = null;
   };
 
